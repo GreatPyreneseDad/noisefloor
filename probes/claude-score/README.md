@@ -13,6 +13,7 @@ with *itself*.
 cd probes/claude-score
 noisefloor run --cmd "./judge.sh {input}" --items ./items --draws 8 --parallel 4 --out score-sonnet.jsonl
 NF_MODEL=haiku noisefloor run --cmd "./judge.sh {input}" --items ./items --draws 8 --parallel 4 --out score-haiku.jsonl
+NF_SCALE=100 noisefloor run --cmd "./judge.sh {input}" --items ./items --draws 8 --parallel 4 --out score100-sonnet.jsonl
 noisefloor compare score-sonnet.jsonl score-haiku.jsonl
 noisefloor plan score-sonnet.jsonl --delta 0.5
 ```
