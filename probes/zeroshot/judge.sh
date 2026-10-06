@@ -6,6 +6,7 @@
 # Builds a throwaway git repo from fixture/, applies the patch as an uncommitted
 # change, runs the judge-only graph in it, and reads the terminal outcome.
 # Requires: zeroshot on PATH, Claude Code signed in (harness "claude").
+# NF_RUNTIME=path/to/other.runtime.json swaps the judge model.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCH="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -28,7 +29,7 @@ OUT="$WORK/run.ndjson"
 zeroshot run --title "nf $NAME" \
   --graph "$HERE/judge.graph.json" \
   --input "$HERE/input.json" \
-  --runtime-config "$HERE/judge.runtime.json" \
+  --runtime-config "${NF_RUNTIME:-$HERE/judge.runtime.json}" \
   --no-environment \
   > "$OUT" 2> "$WORK/run.err"
 rc=$?

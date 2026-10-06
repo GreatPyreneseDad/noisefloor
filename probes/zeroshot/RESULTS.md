@@ -67,8 +67,47 @@ the instrument just says the trade exists and sizes it.
 3. The verifier's diagnostic (the one-sentence reason) is not in the foreground NDJSON stream.
    You get `accepted`/`rejected`; the *why* lives in the ledger.
 
+## Hard set — Haiku 4.5 as the judge (same 10 items, 100 judgments)
+
+Predicted beforehand: h10 drops below 9/10 rejected (**yes — 5/10**); h02 stderr loses at least one (**no — 10/10**). One for two.
+
+| item | expected | Sonnet 4.6 | Haiku 4.5 |
+|---|---|---|---|
+| h01 correct (control) | accepted | accepted 10 | accepted 9 · **rejected 1** |
+| h02 JSON to stderr | rejected | rejected 10 | rejected 10 |
+| h03 exit code 1 | rejected | rejected 10 | rejected 10 |
+| h04 `"ok": "true"` | rejected | rejected 10 | rejected 10 |
+| h05 flag on wrong subcommand | rejected | rejected 10 | rejected 10 |
+| h06 int uptime | ambiguous | accepted 10 | accepted 10 |
+| h07 hand-built JSON | accepted | accepted 9 · rejected 1 | accepted 9 · rejected 1 |
+| h08 `--help` says YAML | ambiguous | rejected 9 · accepted 1 | rejected 10 |
+| h09 default gains newline | rejected | rejected 10 | rejected 10 |
+| h10 `START` reset, `uptime_s` ≈ 0 | rejected | rejected 9 · accepted 1 | **accepted 5 · rejected 5** |
+| **correct by majority** | | 8/8 | 8/8 |
+| **stable** | | 7/10 | 7/10 |
+| **pairwise disagreement** | | 6.0% | 9.6% |
+
+**Same accuracy. Different instrument.** By the number everyone reports — correct by majority —
+the two judges are identical, 8/8. The retest data says otherwise:
+
+- On the one real logic bug that produces valid output, Haiku is a **coin flip** (5/5, latency
+  32–70 s — it worked hard and still split). Sonnet caught it 9 times in 10.
+- Haiku **rejected the correct control once in ten.** A clean change has a ~10% chance of a
+  spurious repair pass under a Haiku verifier. Sonnet: zero in twenty (easy + hard controls).
+- Haiku is *more* decisive on the ambiguous help-text item (10/10 vs 9/10). Decisiveness is not
+  reliability; it just means the coin is weighted differently.
+
+A single accuracy number cannot see any of this. It takes the retest.
+
+**Latency is a free uncertainty signal.** On both judges, the items that flipped are the items
+that took longest: Sonnet h05/h10 at 31–34 s vs ~18 s baseline; Haiku h10 at 32–70 s. A verifier
+that is taking 2× its median is a verifier whose verdict should be drawn again. That is a one-line
+change in a review graph: `attempts: 2` gated on latency, require agreement. Cheaper than two
+verifiers on every pass.
+
 ## Next
 
-- Haiku 4.5 as the judge on the same 10 items; `compare` the flip tables.
+- ~~Haiku 4.5 as the judge on the same 10 items.~~ Done; above.
+- Opus 4.7 for the top of the range; does h10 reach 10/10?
 - 30 draws on h07/h08/h10 to tighten the per-item flip estimate (10 draws gives ±0.19 on a 0.1 rate).
 - Reproduce the easy-set run against a two-verifier `par` graph to measure the trade above directly.

@@ -1,0 +1,12 @@
+{
+  "harness": "claude",
+  "provider": "anthropic",
+  "size": "small",
+  "nodes": {
+    "judge": {
+      "kind": "agent",
+      "model": "claude-haiku-4-5",
+      "sessionScope": "execution"
+    }
+  }
+}
