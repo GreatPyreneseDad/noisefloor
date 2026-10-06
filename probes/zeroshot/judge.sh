@@ -18,6 +18,9 @@ cd "$WORK"
 git init -q
 git -c user.name=nf -c user.email=nf@local add -A
 git -c user.name=nf -c user.email=nf@local commit -qm base
+# zeroshot's local controller requires a GitHub origin on the workspace. It is
+# never fetched for a local run; any owner/name satisfies the check.
+git remote add origin "${NF_ORIGIN:-https://github.com/GreatPyreneseDad/noisefloor.git}"
 patch -s -p1 < "$PATCH" || { echo '{"label":"error","reason":"patch failed"}'; exit 1; }
 
 # Foreground run streams NDJSON; keep it, read the terminal event.
@@ -30,9 +33,10 @@ zeroshot run --title "nf $NAME" \
   > "$OUT" 2> "$WORK/run.err"
 rc=$?
 
-python3 - "$OUT" "$rc" <<'PY'
+python3 - "$OUT" "$rc" "$WORK/run.err" <<'PY'
 import json, sys
-path, rc = sys.argv[1], int(sys.argv[2])
+path, rc, errpath = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+stderr_tail = open(errpath, errors="replace").read()[-600:]
 events = []
 for line in open(path):
     line = line.strip()
@@ -66,5 +70,8 @@ for e in events:
             reason = str(d["diagnostic"].get("message", ""))[:300]
 if label == "error" and rc == 0 and events:
     label = "error:no_terminal_event"
-print(json.dumps({"label": label, "run": run_id, "exit": rc, "reason": reason}))
+out = {"label": label, "run": run_id, "exit": rc, "reason": reason}
+if label.startswith("error"):
+    out["stderr"] = stderr_tail
+print(json.dumps(out))
 PY
