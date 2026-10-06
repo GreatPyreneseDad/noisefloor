@@ -3,7 +3,7 @@ requires = ["setuptools>=65"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "noisefloor"
+name = "noisefloor-llm"
 version = "0.2.0"
 description = "Measure an LLM judge's retest variance before you trust its deltas."
 readme = "README.md"

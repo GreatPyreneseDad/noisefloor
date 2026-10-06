@@ -52,7 +52,7 @@ items 3  ·  draws/item 10.0  ·  labels {accepted:14, rejected:16}
 ## Install
 
 ```bash
-pip install noisefloor        # or: pip install -e .   from a clone
+pip install noisefloor-llm    # the command is still `noisefloor`; the bare PyPI name was taken
 ```
 
 No dependencies. Python 3.9+.
