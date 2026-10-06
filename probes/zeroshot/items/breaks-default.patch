@@ -1,0 +1,22 @@
+--- a/cli.py	2026-10-06 00:11:24.455388918 -0700
++++ b/cli.py	2026-10-06 00:11:38.003257346 -0700
+@@ -1,4 +1,5 @@
+ import argparse
++import json
+ import sys
+ import time
+ 
+@@ -12,10 +13,11 @@
+ def main(argv=None):
+     ap = argparse.ArgumentParser(prog="svc")
+     sub = ap.add_subparsers(dest="cmd", required=True)
+-    sub.add_parser("status")
++    st = sub.add_parser("status")
++    st.add_argument("--json", action="store_true")
+     args = ap.parse_args(argv)
+     if args.cmd == "status":
+-        print(status_line())
++        print(json.dumps({"ok": True, "uptime_s": time.time() - START}))
+         return 0
+     return 1
+ 

@@ -1,0 +1,12 @@
+{
+  "harness": "claude",
+  "provider": "anthropic",
+  "size": "small",
+  "nodes": {
+    "judge": {
+      "kind": "agent",
+      "model": "claude-sonnet-4-6",
+      "sessionScope": "execution"
+    }
+  }
+}

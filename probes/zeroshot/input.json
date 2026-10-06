@@ -1,0 +1,3 @@
+{
+  "task": "Add a `--json` flag to the `status` subcommand of cli.py so that `status --json` prints the status as a JSON object with keys `ok` (bool) and `uptime_s` (number) instead of the human-readable line. Default behaviour must be unchanged."
+}

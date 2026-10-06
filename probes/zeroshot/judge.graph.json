@@ -1,0 +1,156 @@
+{
+  "profile": "openengine.graph.full/v1",
+  "initialInput": {
+    "kind": "record",
+    "fields": {
+      "task": {
+        "type": {
+          "kind": "string"
+        },
+        "required": true
+      }
+    }
+  },
+  "policy": {
+    "policy": "policy.native-v2@1",
+    "default": "deny"
+  },
+  "root": {
+    "kind": "seq",
+    "name": "judge_only",
+    "state": {
+      "kind": "record",
+      "fields": {
+        "task": {
+          "type": {
+            "kind": "string"
+          },
+          "required": true
+        },
+        "feedback": {
+          "type": {
+            "kind": "string"
+          },
+          "required": true
+        }
+      }
+    },
+    "children": [
+      {
+        "kind": "verifier",
+        "name": "judge",
+        "worker": "builtin.agent.acceptance-verifier@1",
+        "instructions": "You are reviewing an uncommitted change in this repository against the task. Run `git diff` to see it. Do not edit files. Decide: accepted if the change correctly and completely implements the task with no defects; rejected otherwise. Give the single most important reason in one sentence.",
+        "input": {
+          "kind": "record",
+          "fields": {
+            "task": {
+              "type": {
+                "kind": "string"
+              },
+              "required": true
+            }
+          }
+        },
+        "output": {
+          "kind": "null"
+        },
+        "inputBindings": [
+          {
+            "target": [
+              "task"
+            ],
+            "value": {
+              "source": "state",
+              "path": [
+                "task"
+              ]
+            }
+          }
+        ],
+        "writeBindings": [
+          {
+            "value": {
+              "node": "judge",
+              "channel": "diagnostic",
+              "path": [
+                "message"
+              ]
+            },
+            "target": [
+              "feedback"
+            ]
+          }
+        ],
+        "attempts": 1,
+        "signals": {
+          "verdict": [
+            "accepted",
+            "rejected"
+          ]
+        },
+        "diagnostic": {
+          "kind": "record",
+          "fields": {
+            "message": {
+              "type": {
+                "kind": "string"
+              },
+              "required": true
+            }
+          }
+        }
+      },
+      {
+        "kind": "choice",
+        "name": "result",
+        "state": {
+          "kind": "record",
+          "fields": {
+            "task": {
+              "type": {
+                "kind": "string"
+              },
+              "required": true
+            },
+            "feedback": {
+              "type": {
+                "kind": "string"
+              },
+              "required": true
+            }
+          }
+        },
+        "branches": [
+          {
+            "when": {
+              "kind": "in",
+              "value": {
+                "name": "judge",
+                "source": "signal",
+                "field": "verdict"
+              },
+              "labels": [
+                "accepted"
+              ]
+            },
+            "node": {
+              "kind": "succeed",
+              "name": "accepted",
+              "output": {
+                "kind": "null"
+              },
+              "bindings": []
+            }
+          }
+        ],
+        "otherwise": {
+          "kind": "fail",
+          "name": "rejected",
+          "reason": "rejected"
+        },
+        "promotedStatePaths": []
+      }
+    ]
+  }
+}
