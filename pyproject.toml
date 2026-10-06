@@ -8,13 +8,16 @@ version = "0.1.0"
 description = "Measure an LLM judge's retest variance before you trust its deltas."
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "Christopher MacGregor"}]
 keywords = ["llm", "evaluation", "llm-as-judge", "reliability", "icc", "noise"]
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["noisefloor"]
 
 [project.scripts]
 noisefloor = "noisefloor.cli:main"
