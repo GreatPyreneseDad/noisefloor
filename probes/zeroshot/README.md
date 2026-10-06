@@ -51,3 +51,19 @@ Then swap the model in `judge.runtime.json` and run again:
 ```bash
 noisefloor compare zeroshot-sonnet.jsonl zeroshot-opus.jsonl   # (scores) or diff the VERDICTS blocks
 ```
+
+## Hard set
+
+`items-hard/` has ten diffs with subtle defects — JSON to stderr, exit code 1, `"ok": "true"`
+as a string, the flag on the wrong subcommand, a trailing newline on the default path, a
+timer reset that makes `uptime_s` always ~0 — plus two deliberately ambiguous ones and a
+correct-but-crude control. `items-hard/MANIFEST.md` has the expected verdict and why.
+
+```bash
+noisefloor run --cmd "./judge.sh {input} {item}" --items ./items-hard --draws 10 --parallel 2 --out hard-sonnet.jsonl
+noisefloor grade hard-sonnet.jsonl --expected items-hard/expected.json
+```
+
+`grade` shows, per item, whether the modal verdict is right and whether all ten draws agreed.
+A judge can be right and unstable (7/10 on a correct patch) or stable and wrong (10/10
+accepting the stderr bug). Both are findings; they are different findings.

@@ -1,0 +1,12 @@
+{
+ "h01-correct": "accepted",
+ "h02-stderr": "rejected",
+ "h03-exit-code": "rejected",
+ "h04-bool-string": "rejected",
+ "h05-global-flag": "rejected",
+ "h06-rounded-int": "ambiguous",
+ "h07-manual-json": "accepted",
+ "h08-help-typo": "ambiguous",
+ "h09-default-newline": "rejected",
+ "h10-start-reset": "rejected"
+}

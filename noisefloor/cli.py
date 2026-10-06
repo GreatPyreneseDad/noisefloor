@@ -4,6 +4,7 @@
   noisefloor report  judge.jsonl                 # noise floor, ICC, flip rate, min detectable Δ
   noisefloor compare a.jsonl b.jsonl             # is A−B bigger than the judge's own wobble?
   noisefloor plan    judge.jsonl --delta 0.05    # draws per item needed to see a 0.05 change
+  noisefloor grade   r.jsonl --expected key.json  # verdict judge: right AND stable, per item
   noisefloor demo                                # synthetic noisy judge, so you can see the output
 """
 from __future__ import annotations
@@ -118,6 +119,37 @@ def cmd_plan(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_grade(a: argparse.Namespace) -> int:
+    """Verdict judge vs. a labelled answer key: correctness AND stability per item."""
+    from collections import Counter
+    expected: Dict[str, str] = json.load(open(a.expected))
+    labels = group_labels(load_log(a.log))
+    rows = []
+    n_scored = n_right = n_stable = 0
+    for item in sorted(labels):
+        key = item.rsplit(".", 1)[0] if item not in expected else item
+        exp = expected.get(key, expected.get(item, "?"))
+        c = Counter(labels[item])
+        modal, m = c.most_common(1)[0]
+        k = len(labels[item])
+        stable = len(c) == 1
+        if exp not in ("?", "ambiguous"):
+            n_scored += 1
+            n_right += int(modal == exp)
+        n_stable += int(stable)
+        verdict = ("ambiguous" if exp == "ambiguous" else "✓" if modal == exp else "✗ WRONG")
+        verdict += "" if stable else f"  flips {k - m}/{k}"
+        rows.append((item, exp, "  ".join(f"{l} {v}" for l, v in sorted(c.items())), verdict))
+    w = max(len(r[0]) for r in rows)
+    print(f"{'item':<{w}}  {'expected':<10} {'verdicts':<26} result")
+    for r in rows:
+        print(f"{r[0]:<{w}}  {r[1]:<10} {r[2]:<26} {r[3]}")
+    print()
+    print(f"correct (modal verdict, non-ambiguous items): {n_right}/{n_scored}")
+    print(f"stable (all draws agree):                    {n_stable}/{len(rows)}")
+    return 0 if n_right == n_scored else 3
+
+
 def cmd_demo(a: argparse.Namespace) -> int:
     """A synthetic judge with known noise so the output is legible before you wire a real one."""
     from .runner import measure
@@ -178,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--items", type=int, default=0, help="planned item count (default: as in log)")
     pl.add_argument("--power", type=float, default=0.8)
     pl.set_defaults(func=cmd_plan)
+
+    g = sub.add_parser("grade", help="verdict judge vs. an answer key: correct AND stable per item")
+    g.add_argument("log")
+    g.add_argument("--expected", required=True, help="JSON {item: label|'ambiguous'}; .patch/.txt suffix on items is ignored")
+    g.set_defaults(func=cmd_grade)
 
     d = sub.add_parser("demo", help="synthetic judge with known noise")
     d.add_argument("--items", type=int, default=30)
