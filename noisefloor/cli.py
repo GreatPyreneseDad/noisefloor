@@ -4,6 +4,8 @@
   noisefloor report  judge.jsonl                 # noise floor, ICC, flip rate, min detectable Δ
   noisefloor compare a.jsonl b.jsonl             # is A−B bigger than the judge's own wobble?
   noisefloor plan    judge.jsonl --delta 0.05    # draws per item needed to see a 0.05 change
+  noisefloor plan    --flip 0.0 0.1               # draws to tell a 10% flip rate from 0 on one item
+  noisefloor compare a.jsonl b.jsonl             # verdict logs: which judge is steadier, with CI
   noisefloor grade   r.jsonl --expected key.json  # verdict judge: right AND stable, per item
   noisefloor demo                                # synthetic noisy judge, so you can see the output
 """
@@ -38,13 +40,17 @@ def _fmt_flips(f: stats.Flips, per_item: Dict[str, List[str]] | None = None) -> 
     labels = ", ".join(f"{k}:{v}" for k, v in sorted(f.label_counts.items()))
     tail = []
     if per_item:
-        from collections import Counter
         tail.append("")
-        for item, ls in per_item.items():
-            c = Counter(ls)
-            dist = "  ".join(f"{k} {v}" for k, v in sorted(c.items()))
-            mark = "" if len(c) == 1 else "   ← flips"
-            tail.append(f"  {item:<28} {dist}{mark}")
+        tail.append(f"  {'item':<28} {'verdicts':<26} minority rate (95% CI)")
+        for it in stats.item_flips(per_item):
+            dist = "  ".join(f"{k} {v}" for k, v in sorted(it.counts.items()))
+            if it.minority == 0:
+                ci = f"0/{it.n}   [0, {it.ci95[1]:.0%}]"
+            else:
+                ci = f"{it.minority}/{it.n}   [{it.ci95[0]:.0%}, {it.ci95[1]:.0%}]   ← flips"
+            tail.append(f"  {it.item:<28} {dist:<26} {ci}")
+        tail.append("")
+        tail.append("  (a 1/10 flip is not 10%: the interval says 2–40%. More draws narrow it; `plan --flip`.)")
     return "\n".join([
         f"items {f.n_items}  ·  draws/item {f.draws_per_item:.1f}  ·  labels {{{labels}}}",
         "",
@@ -52,6 +58,30 @@ def _fmt_flips(f: stats.Flips, per_item: Dict[str, List[str]] | None = None) -> 
         f"  pairwise disagreement          {f.pairwise_disagreement:.3f}      ← P(two re-runs of one item disagree)",
         f"  majority agreement             {f.majority_agreement:.3f}      ← mean fraction matching the modal verdict",
     ] + tail)
+
+
+def _fmt_latency(L: stats.LatencyReport, factor: float) -> str:
+    lines = [f"overall median {L.overall_median:.1f}s  ·  slow = > {factor:g}× that ({factor * L.overall_median:.0f}s)"]
+    lines.append("")
+    if not L.flagged_items:
+        lines.append("  nothing slow; latency carries no signal here")
+        return "\n".join(lines)
+    slow_items = [i for i in L.flagged_items if L.items[i]["slow_item"]]
+    flipping_slow = [i for i in slow_items if L.items[i]["flips"]]
+    lines.append(f"  slow draws                     {L.slow_total}")
+    if L.slow_total:
+        lines.append(f"  slow AND minority verdict      {L.slow_minority}/{L.slow_total}")
+    if slow_items:
+        lines.append(f"  slow items (median > cutoff)   {len(slow_items)}, of which {len(flipping_slow)} flip   ← the judge works hardest where it is least sure")
+    lines.append("")
+    for item in L.flagged_items:
+        i = L.items[item]
+        tag = " SLOW ITEM" if i["slow_item"] else ""
+        tag += "  flips" if i["flips"] else ""
+        s_ = ", ".join(f"d{d} {lat:.0f}s→{val}" for d, lat, val in i["slow"][:6])
+        more = f" (+{len(i['slow']) - 6})" if len(i["slow"]) > 6 else ""
+        lines.append(f"  {item:<28} median {i['median']:.0f}s{tag}   {s_}{more}")
+    return "\n".join(lines)
 
 
 def cmd_run(a: argparse.Namespace) -> int:
@@ -80,6 +110,11 @@ def _report_rows(rows: List[dict], as_json: bool) -> int:
         out["flips"] = f.to_dict()
         if not as_json:
             print("VERDICTS\n" + _fmt_flips(f, labels) + "\n")
+    if any(r.get("latency_s") is not None for r in rows):
+        L = stats.latency(rows, factor=1.75)
+        out["latency"] = L.to_dict()
+        if not as_json and (scores or labels):
+            print("LATENCY\n" + _fmt_latency(L, 1.75) + "\n")
     if not scores and not labels:
         print("no scores or labels parsed from the log — check the judge's stdout format", file=sys.stderr)
         return 1
@@ -95,8 +130,31 @@ def cmd_report(a: argparse.Namespace) -> int:
 
 
 def cmd_compare(a: argparse.Namespace) -> int:
-    sa = group_scores(load_log(a.a))
-    sb = group_scores(load_log(a.b))
+    ra, rb = load_log(a.a), load_log(a.b)
+    sa, sb = group_scores(ra), group_scores(rb)
+    la, lb = group_labels(ra), group_labels(rb)
+    use_labels = a.labels or (not sa and not sb and la and lb)
+    if use_labels:
+        c = stats.compare_labels(la, lb, seed=a.seed)
+        if a.json:
+            print(json.dumps(c.to_dict(), indent=2))
+            return 0
+        print(f"paired items {c.n_items}   pairwise disagreement A {c.disagreement_a:.1%}   B {c.disagreement_b:.1%}   Δ {c.delta:+.1%}")
+        print(f"  95% CI (bootstrap over items) [{c.ci95[0]:+.1%}, {c.ci95[1]:+.1%}]   p≈{c.p_value:.2f}")
+        print()
+        w = max(len(k) for k, _, _ in c.items)
+        print(f"  {'item':<{w}}  {'A':<28} B")
+        for k, ca, cb in c.items:
+            fa = "  ".join(f"{l} {v}" for l, v in sorted(ca.items()))
+            fb = "  ".join(f"{l} {v}" for l, v in sorted(cb.items()))
+            mark = ""
+            if len(ca) > 1 and len(cb) > 1: mark = "   ← both flip"
+            elif len(ca) > 1: mark = "   ← A flips"
+            elif len(cb) > 1: mark = "   ← B flips"
+            print(f"  {k:<{w}}  {fa:<28} {fb}{mark}")
+        print()
+        print("  " + c.verdict)
+        return 0 if not (c.ci95[0] <= 0 <= c.ci95[1]) else 2
     c = stats.compare(sa, sb, seed=a.seed)
     if a.json:
         print(json.dumps(c.to_dict(), indent=2))
@@ -110,6 +168,24 @@ def cmd_compare(a: argparse.Namespace) -> int:
 
 
 def cmd_plan(a: argparse.Namespace) -> int:
+    if a.flip:
+        p0, p1 = a.flip
+        k = stats.draws_needed_flip(p0, p1, a.power)
+        print(f"To tell a per-item flip rate of {p1:.0%} from {p0:.0%} at 95% with {a.power:.0%} power: "
+              f"{k} draws on that item.")
+        if a.log:
+            labels = group_labels(load_log(a.log))
+            flips_ = [f for f in stats.item_flips(labels) if f.minority]
+            if flips_:
+                print()
+                print(f"  to show each flipping item exceeds a tolerable {p0:.0%}, if its observed rate holds:")
+                for f in flips_:
+                    n_need = stats.draws_to_separate(f.rate, p0, f.n)
+                    need = "already separated" if n_need == f.n else (f"{n_need} draws ({n_need - f.n} more)" if n_need else "rate ≤ P0")
+                    print(f"  {f.item:<28} {f.minority}/{f.n}  CI [{f.ci95[0]:.0%}, {f.ci95[1]:.0%}]  → {need}")
+        return 0
+    if a.delta is None:
+        raise SystemExit("plan: give --delta (scores) or --flip P0 P1 (verdicts)")
     scores = group_scores(load_log(a.log))
     r = stats.retest(scores)
     k = stats.draws_needed(r.within_var, a.items or r.n_items, a.delta, a.power)
@@ -201,13 +277,15 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("compare", help="is A−B larger than the judge's own wobble?")
     c.add_argument("a")
     c.add_argument("b")
+    c.add_argument("--labels", action="store_true", help="compare verdict stability (auto when both logs are label-only)")
     c.add_argument("--seed", type=int, default=0)
     c.add_argument("--json", action="store_true")
     c.set_defaults(func=cmd_compare)
 
     pl = sub.add_parser("plan", help="draws per item needed to detect a given Δ")
-    pl.add_argument("log")
-    pl.add_argument("--delta", type=float, required=True)
+    pl.add_argument("log", nargs="?", help="a log (needed for --delta; optional for --flip)")
+    pl.add_argument("--delta", type=float, help="scores: detect this mean difference")
+    pl.add_argument("--flip", type=float, nargs=2, metavar=("P0", "P1"), help="verdicts: tell flip rate P1 from P0 on one item")
     pl.add_argument("--items", type=int, default=0, help="planned item count (default: as in log)")
     pl.add_argument("--power", type=float, default=0.8)
     pl.set_defaults(func=cmd_plan)

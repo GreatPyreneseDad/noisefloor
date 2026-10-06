@@ -69,14 +69,23 @@ noisefloor run --cmd 'python judge.py {input}' --items ./cases --draws 5 --out a
 # verdict judge: prints ACCEPT / REJECT or {"label": "..."}
 noisefloor run --cmd './review.sh {input}' --items ./diffs --draws 10 --out r.jsonl
 
-# re-read a log without re-running anything
+# re-read a log without re-running anything (adds per-item flip CIs and a latency section)
 noisefloor report a.jsonl
+
+# verdict judge against an answer key: right AND stable, per item
+noisefloor grade r.jsonl --expected key.json
 
 # is A really better than B, or is that the judge?
 noisefloor compare a.jsonl b.jsonl       # exit 2 when inside the noise
 
 # how many draws would it take to see a 0.05 change on 100 items?
 noisefloor plan a.jsonl --delta 0.05 --items 100
+
+# verdicts: two judges' flip tables side by side, with a CI on the difference
+noisefloor compare r_sonnet.jsonl r_haiku.jsonl
+
+# verdicts: how many draws to show an item flips more than a tolerable 5%?
+noisefloor plan r.jsonl --flip 0.05 0.15
 
 # see the output on a synthetic judge with known noise
 noisefloor demo --noise 0.8 --shift 0.3
@@ -110,10 +119,18 @@ items and draw count, the smallest mean difference that clears 1.96 × the
 noise-only standard error. If your reported improvement is smaller than this,
 it has not been shown.
 
-**compare** reports two tests and the stricter one wins: `z_noise` uses the
-retest variance (would re-scoring the same work produce this delta?), and a
-bootstrap over items (would re-sampling items?). `INSIDE THE NOISE` means at
-least one of them can't tell A from B.
+**compare** reports two tests and names which one failed. `INSIDE THE JUDGE'S
+NOISE`: re-scoring the same work would produce this delta — more draws help.
+`ITEM-DEPENDENT`: the judges differ by more than noise, but not in a consistent
+direction across items — a difference in taste, not a bias; more items help,
+more draws don't. `CLEARS THE NOISE`: both pass.
+
+**per-item flip CIs** — a 1-in-10 flip is not "10%". At n=10 the Wilson interval
+is [2%, 40%]. The report prints it so nobody reads 0.1 as a measurement.
+
+**latency** — flagged relative to the judge's overall median. In every run so far,
+the slow draw on an otherwise-stable item was the flip. Treat a slow verifier as
+an uncertain one and redraw.
 
 **flips** — for categorical judges: the fraction of items whose verdict changed
 across identical re-runs, and the probability that two random re-runs of the
@@ -129,6 +146,10 @@ reviewer whose rejections are 20% weather.
   labelled diffs (one correct, one with a wrong key, one that breaks the
   default) ten times each. Measures whether "independent review" is stable
   on identical input.
+
+- [`probes/claude-score`](probes/claude-score) — a 1–10 readability grader on
+  `claude -p` (no API key). Exercises the score path: noise floor, ICC, `compare`.
+  Sonnet 0.25 SD vs Haiku 0.70 on the same eight snippets.
 
 Add a probe by writing a shell wrapper that prints a score or label. PRs welcome.
 

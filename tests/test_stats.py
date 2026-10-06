@@ -56,7 +56,7 @@ def test_compare_inside_noise_when_shift_is_small():
     b = {k: [v + 0.05 + rng.gauss(0, 1) for _ in range(3)] for k, v in base.items()}
     c = stats.compare(a, b, seed=0)
     assert c.inside_noise
-    assert "INSIDE" in c.verdict
+    assert "INSIDE" in c.verdict or "ITEM-DEPENDENT" in c.verdict
 
 
 def test_compare_clears_noise_when_shift_is_large():

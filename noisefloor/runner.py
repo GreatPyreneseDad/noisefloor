@@ -34,18 +34,26 @@ Draw = dict
 _NUM = re.compile(r"^\s*[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?\s*$")
 
 
+_JSON_OBJ = re.compile(r"\{[^{}]*\}")
+
+
 def parse_output(text: str) -> Tuple[Optional[float], Optional[str]]:
-    """Return (score, label) from a judge's stdout. Both may be None."""
+    """Return (score, label) from a judge's stdout. Both may be None.
+
+    Tolerant of markdown fences and chatter around the answer: the LAST JSON
+    object anywhere in the output wins, then a bare number on the last line,
+    then a bare token.
+    """
     s = text.strip()
     if not s:
         return None, None
-    # JSON object anywhere in the last non-empty line, or the whole output
-    for candidate in (s, s.splitlines()[-1]):
+    s = re.sub(r"^```[a-zA-Z]*\s*|```\s*$", "", s, flags=re.M).strip()
+    for candidate in reversed(_JSON_OBJ.findall(s)):
         try:
             obj = json.loads(candidate)
         except Exception:
             continue
-        if isinstance(obj, dict):
+        if isinstance(obj, dict) and ("score" in obj or "label" in obj or "verdict" in obj):
             score = obj.get("score")
             label = obj.get("label") or obj.get("verdict")
             try:
@@ -53,12 +61,11 @@ def parse_output(text: str) -> Tuple[Optional[float], Optional[str]]:
             except (TypeError, ValueError):
                 score = None
             return score, (str(label) if label is not None else None)
-        if isinstance(obj, (int, float)):
-            return float(obj), None
-    last = s.splitlines()[-1].strip()
+    lines = [l for l in s.splitlines() if l.strip()]
+    last = lines[-1].strip() if lines else ""
     if _NUM.match(last):
         return float(last), None
-    if len(last.split()) == 1:
+    if last and len(last.split()) == 1:
         return None, last
     return None, None
 

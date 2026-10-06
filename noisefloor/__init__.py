@@ -2,6 +2,6 @@
 from .stats import Comparison, Flips, Retest, compare, draws_needed, flips, retest
 from .runner import measure, run_command, load_log, group_scores, group_labels
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["Comparison", "Flips", "Retest", "compare", "draws_needed", "flips", "retest",
            "measure", "run_command", "load_log", "group_scores", "group_labels"]

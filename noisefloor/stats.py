@@ -236,14 +236,19 @@ def compare(a: Scores, b: Scores, *, seed: int = 0, boots: int = 2000) -> Compar
     hi = bs[int(0.975 * boots) - 1]
     paired_se = math.sqrt(_var(diffs) / n)
 
-    inside = abs(z) < Z95 or (lo <= 0.0 <= hi)
-    if inside:
-        verdict = (f"INSIDE THE NOISE: Δ={delta:+.3f} is {abs(z):.1f}× the judge's own "
-                   f"retest SE ({noise_se:.3f}); 95% CI [{lo:+.3f}, {hi:+.3f}] spans 0. "
-                   "Re-scoring the same work would produce a difference this big.")
+    noise_fail = abs(z) < Z95
+    items_fail = lo <= 0.0 <= hi
+    inside = noise_fail or items_fail
+    if noise_fail:
+        verdict = (f"INSIDE THE JUDGE'S NOISE: Δ={delta:+.3f} is {abs(z):.1f}× the retest SE ({noise_se:.3f}). "
+                   "Re-scoring the same work would produce a difference this big. More draws per item would help.")
+    elif items_fail:
+        verdict = (f"ITEM-DEPENDENT: Δ={delta:+.3f} is {abs(z):.1f}× the retest SE — the judge noise does not explain it — "
+                   f"but the 95% CI over items [{lo:+.3f}, {hi:+.3f}] spans 0: the direction is not consistent from item to item. "
+                   "More items would help; more draws would not.")
     else:
-        verdict = (f"CLEARS THE NOISE: Δ={delta:+.3f} is {abs(z):.1f}× the judge's retest SE "
-                   f"({noise_se:.3f}); 95% CI [{lo:+.3f}, {hi:+.3f}].")
+        verdict = (f"CLEARS THE NOISE: Δ={delta:+.3f} is {abs(z):.1f}× the retest SE ({noise_se:.3f}); "
+                   f"95% CI over items [{lo:+.3f}, {hi:+.3f}].")
     return Comparison(
         n_items=n, mean_a=_mean(ma), mean_b=_mean(mb), delta=delta,
         noise_se=noise_se, z_noise=z, paired_se=paired_se, ci95=(lo, hi),
@@ -266,3 +271,196 @@ def draws_needed(within_var: float, n_items: int, delta: float, power: float = 0
 
 
 __all__ = ["Retest", "retest", "Flips", "flips", "Comparison", "compare", "draws_needed", "Z95"]
+
+
+# --- intervals, verdict comparison, verdict planning -------------------------
+
+def wilson(k: int, n: int, z: float = Z95) -> tuple[float, float]:
+    """Wilson score interval for a proportion k/n. Honest at small n and at 0 or n."""
+    if n <= 0:
+        return (0.0, 1.0)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+@dataclass
+class ItemFlip:
+    item: str
+    n: int
+    modal: str
+    minority: int                  # draws not matching the modal label
+    rate: float                    # minority / n
+    ci95: tuple[float, float]      # Wilson on the minority rate
+    counts: Dict[str, int]
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["ci95"] = list(self.ci95)
+        return d
+
+
+def item_flips(labels: Labels) -> List[ItemFlip]:
+    """Per-item minority-verdict rate with a Wilson interval — 1/10 is not 0.10, it is [0.02, 0.40]."""
+    out: List[ItemFlip] = []
+    for item, v in labels.items():
+        v = list(v)
+        if not v:
+            continue
+        c = Counter(v)
+        modal, m = c.most_common(1)[0]
+        k = len(v) - m
+        out.append(ItemFlip(item=item, n=len(v), modal=modal, minority=k, rate=k / len(v),
+                            ci95=wilson(k, len(v)), counts=dict(c)))
+    return out
+
+
+def _pairwise_disagreement(labels: Labels) -> float:
+    num = den = 0.0
+    for v in labels.values():
+        k = len(v)
+        if k < 2:
+            continue
+        c = Counter(v)
+        num += k * (k - 1) - sum(m * (m - 1) for m in c.values())
+        den += k * (k - 1)
+    return num / den if den else 0.0
+
+
+@dataclass
+class LabelComparison:
+    n_items: int
+    disagreement_a: float
+    disagreement_b: float
+    delta: float                   # a − b
+    ci95: tuple[float, float]      # bootstrap over items
+    p_value: float                 # two-sided, bootstrap: P(|Δ*| ≥ |Δ|) under item-resampling of the null
+    items: List[tuple[str, Dict[str, int], Dict[str, int]]]   # side-by-side counts
+    verdict: str
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["ci95"] = list(self.ci95)
+        return d
+
+
+def compare_labels(a: Labels, b: Labels, *, seed: int = 0, boots: int = 2000) -> LabelComparison:
+    """Do two verdict judges differ in how often they disagree with themselves?
+
+    Items paired by key. Statistic: pairwise disagreement rate, A − B. Draws
+    within an item are not independent, so the bootstrap resamples *items*.
+    """
+    keys = [k for k in a if k in b and len(a[k]) >= 2 and len(b[k]) >= 2]
+    if len(keys) < 2:
+        raise ValueError("need ≥2 paired items with ≥2 draws each")
+    da = _pairwise_disagreement({k: a[k] for k in keys})
+    db = _pairwise_disagreement({k: b[k] for k in keys})
+    delta = da - db
+    rng = random.Random(seed)
+    n = len(keys)
+    bs = []
+    for _ in range(boots):
+        s = [keys[rng.randrange(n)] for _ in range(n)]
+        bs.append(_pairwise_disagreement({i: a[k] for i, k in enumerate(s)})
+                  - _pairwise_disagreement({i: b[k] for i, k in enumerate(s)}))
+    bs.sort()
+    lo, hi = bs[int(0.025 * boots)], bs[int(0.975 * boots) - 1]
+    # bootstrap p-value: centre the distribution on 0 and ask how often |Δ*| ≥ |Δ|
+    centred = [x - delta for x in bs]
+    p = sum(1 for x in centred if abs(x) >= abs(delta)) / boots
+    side = [(k, dict(Counter(a[k])), dict(Counter(b[k]))) for k in keys]
+    if lo <= 0.0 <= hi:
+        verdict = (f"INDISTINGUISHABLE: A disagrees with itself {da:.1%}, B {db:.1%}; Δ={delta:+.1%}, "
+                   f"95% CI [{lo:+.1%}, {hi:+.1%}] spans 0 (p≈{p:.2f}). With {n} items you cannot say one judge is steadier.")
+    else:
+        worse = "A" if delta > 0 else "B"
+        verdict = (f"DIFFERENT: {worse} is the noisier judge. A {da:.1%} vs B {db:.1%}; Δ={delta:+.1%}, "
+                   f"95% CI [{lo:+.1%}, {hi:+.1%}] (p≈{p:.2f}).")
+    return LabelComparison(n_items=n, disagreement_a=da, disagreement_b=db, delta=delta,
+                           ci95=(lo, hi), p_value=p, items=side, verdict=verdict)
+
+
+def draws_needed_flip(p_null: float, p_alt: float, power: float = 0.8) -> int:
+    """Draws on ONE item to tell a flip rate of p_alt from p_null (one-sample binomial, normal approx)."""
+    zb = {0.8: 0.8416, 0.9: 1.2816, 0.95: 1.6449}.get(power, 0.8416)
+    if not (0 <= p_null < 1 and 0 <= p_alt <= 1) or p_null == p_alt:
+        raise ValueError("need 0 ≤ p_null ≠ p_alt ≤ 1")
+    num = (Z95 * math.sqrt(p_null * (1 - p_null)) + zb * math.sqrt(p_alt * (1 - p_alt))) ** 2
+    return max(1, math.ceil(num / (p_alt - p_null) ** 2))
+
+
+# --- latency as an uncertainty signal ----------------------------------------
+
+@dataclass
+class LatencyReport:
+    items: Dict[str, dict]         # item -> {median, slow: [(draw, latency, label_or_score)], n}
+    slow_total: int
+    slow_minority: int             # slow draws whose label is the item's minority verdict
+    overall_median: float
+    flagged_items: List[str]       # items with ≥1 slow draw
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def latency(rows: Iterable[dict], factor: float = 1.75) -> LatencyReport:
+    """Flag draws slower than `factor` × the judge's OVERALL median latency.
+
+    Relative to the overall median, not the item's own: an item that is slow on
+    every draw is itself the signal (the judge is working harder there), and
+    those were the items that flipped. items[*]["slow_item"] marks an item whose
+    median exceeds the overall median by `factor`.
+    """
+    by: Dict[str, List[dict]] = {}
+    for r in rows:
+        if r.get("latency_s") is not None:
+            by.setdefault(r["item"], []).append(r)
+    all_lat = sorted(r["latency_s"] for rs in by.values() for r in rs)
+    if not all_lat:
+        return LatencyReport(items={}, slow_total=0, slow_minority=0, overall_median=0.0, flagged_items=[])
+    om = all_lat[len(all_lat) // 2] if len(all_lat) % 2 else (all_lat[len(all_lat) // 2 - 1] + all_lat[len(all_lat) // 2]) / 2
+    cutoff = factor * om
+    items: Dict[str, dict] = {}
+    slow_total = slow_minority = 0
+    flagged = []
+    for item, rs in by.items():
+        lats = sorted(r["latency_s"] for r in rs)
+        med = lats[len(lats) // 2] if len(lats) % 2 else (lats[len(lats) // 2 - 1] + lats[len(lats) // 2]) / 2
+        labels = [r.get("label") for r in rs if r.get("label") is not None]
+        modal = Counter(labels).most_common(1)[0][0] if labels else None
+        slow = []
+        for r in rs:
+            if r["latency_s"] > cutoff:
+                val = r.get("label") if r.get("label") is not None else r.get("score")
+                slow.append((r["draw"], r["latency_s"], val))
+                slow_total += 1
+                if modal is not None and r.get("label") is not None and r["label"] != modal:
+                    slow_minority += 1
+        items[item] = {"median": med, "n": len(rs), "slow": slow, "slow_item": med > cutoff,
+                       "flips": len(set(labels)) > 1 if labels else None}
+        if slow or med > cutoff:
+            flagged.append(item)
+    return LatencyReport(items=items, slow_total=slow_total, slow_minority=slow_minority,
+                         overall_median=om, flagged_items=flagged)
+
+
+def draws_to_separate(rate: float, p0: float, n_now: int, max_n: int = 2000) -> Optional[int]:
+    """Smallest n at which a Wilson interval on `rate` would exclude `p0`, if the rate holds.
+
+    The honest cost of confirming "this item flips more than p0". None if rate ≤ p0.
+    """
+    if rate <= p0:
+        return None
+    n = max(n_now, 1)
+    while n <= max_n:
+        k = round(rate * n)
+        if wilson(k, n)[0] > p0:
+            return n
+        n += 1
+    return None
+
+
+__all__ += ["wilson", "ItemFlip", "item_flips", "LabelComparison", "compare_labels",
+            "draws_needed_flip", "LatencyReport", "latency", "draws_to_separate"]

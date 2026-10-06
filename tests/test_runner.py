@@ -47,3 +47,9 @@ def test_load_items_ignores_manifest_and_honours_glob(tmp_path):
     (d / "MANIFEST.md").write_text("m"); (d / "expected.json").write_text("{}")
     assert sorted(runner.load_items(d)) == ["a.patch", "b.txt"]
     assert sorted(runner.load_items(d, "*.patch")) == ["a.patch"]
+
+
+def test_parse_output_tolerates_fences_and_chatter():
+    assert runner.parse_output('```json\n{"score": 7}\n```') == (7.0, None)
+    assert runner.parse_output('Sure! Here is my grade:\n{"score": 4}\nHope that helps.') == (4.0, None)
+    assert runner.parse_output('{"meta": 1}\n{"label": "accept"}') == (None, "accept")

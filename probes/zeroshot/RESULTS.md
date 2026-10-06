@@ -105,6 +105,29 @@ that is taking 2× its median is a verifier whose verdict should be drawn again.
 change in a review graph: `attempts: 2` gated on latency, require agreement. Cheaper than two
 verifiers on every pass.
 
+## Correction, after running `compare` on these two logs
+
+The paragraph above says 6.0% vs 9.6%. `noisefloor compare hard-sonnet hard-haiku` says:
+
+```
+pairwise disagreement A 6.0%   B 9.6%   Δ -3.6%
+95% CI (bootstrap over items) [-12.7%, +4.0%]   p≈0.49
+INDISTINGUISHABLE: with 10 items you cannot say one judge is steadier.
+```
+
+The aggregate claim is not established. Ten items is too few to rank two judges on overall
+disagreement, and the tool built to say so said so — to its author. What the data do support is
+per item: on h10, Haiku 5/10 vs Sonnet 1/10 (Fisher exact two-sided p = 0.14 — suggestive, not
+significant; `plan --flip 0.05 0.5` says ~30 draws each to settle it). On h01, Haiku 1/10 vs
+Sonnet 0/10 is nothing (p = 1.0).
+
+**Latency, refined.** Measured against the judge's *overall* median rather than each item's own:
+Sonnet's only flip on an otherwise-stable item (h07, draw 1) was its only slow draw on that item
+— 42 s against a 22 s median. Haiku's spurious reject of the correct control (h01, draw 4) was its
+only slow draw there — 44 s against 19 s. On h10, 5 of Haiku's 8 slow draws were minority verdicts.
+Across both judges, the slow draw on a stable item *is* the flip. That is the one-line graph rule:
+redraw when a verifier runs long.
+
 ## Next
 
 - ~~Haiku 4.5 as the judge on the same 10 items.~~ Done; above.
