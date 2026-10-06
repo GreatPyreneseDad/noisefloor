@@ -5,3 +5,5 @@ __pycache__/
 !probes/**/*.example.jsonl
 build/
 dist/
+.venv/
+venv/

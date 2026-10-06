@@ -63,13 +63,20 @@ def parse_output(text: str) -> Tuple[Optional[float], Optional[str]]:
     return None, None
 
 
-def load_items(source: Union[str, Path]) -> Dict[str, str]:
-    """Items from a directory of files (id = filename) or a JSONL of {id, text}."""
+IGNORED_ITEM_NAMES = {"README.md", "MANIFEST.md", "expected.json"}
+
+
+def load_items(source: Union[str, Path], glob: str = "*") -> Dict[str, str]:
+    """Items from a directory of files (id = filename) or a JSONL of {id, text}.
+
+    In a directory, `glob` selects files (e.g. "*.patch"); README/MANIFEST/expected.json
+    are never items.
+    """
     p = Path(source)
     items: Dict[str, str] = {}
     if p.is_dir():
-        for f in sorted(p.iterdir()):
-            if f.is_file() and not f.name.startswith("."):
+        for f in sorted(p.glob(glob)):
+            if f.is_file() and not f.name.startswith(".") and f.name not in IGNORED_ITEM_NAMES:
                 items[f.name] = f.read_text(errors="replace")
     elif p.suffix == ".jsonl":
         for line in p.read_text().splitlines():

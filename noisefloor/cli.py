@@ -55,7 +55,7 @@ def _fmt_flips(f: stats.Flips, per_item: Dict[str, List[str]] | None = None) -> 
 
 
 def cmd_run(a: argparse.Namespace) -> int:
-    items = load_items(a.items)
+    items = load_items(a.items, a.glob)
     if a.limit:
         items = dict(list(items.items())[: a.limit])
     print(f"noisefloor: {len(items)} items × {a.draws} draws → {a.out}", file=sys.stderr)
@@ -183,6 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run", help="run a judge command k× per item and report")
     r.add_argument("--cmd", required=True, help="shell command; {input} = item file path, {item} = id, {draw} = index")
     r.add_argument("--items", required=True, help="directory of item files, or JSONL of {id,text}")
+    r.add_argument("--glob", default="*", help='file pattern inside --items dir, e.g. "*.patch"')
     r.add_argument("--draws", type=int, default=5)
     r.add_argument("--out", default="noisefloor.jsonl")
     r.add_argument("--parallel", type=int, default=1)

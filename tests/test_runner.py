@@ -39,3 +39,11 @@ def test_measure_in_process_with_labels():
     assert len(rows) == 4 and len(calls) == 4
     labels = runner.group_labels(rows)
     assert labels == {"x": ["accept", "accept"], "y": ["reject", "reject"]}
+
+
+def test_load_items_ignores_manifest_and_honours_glob(tmp_path):
+    d = tmp_path / "items"; d.mkdir()
+    (d / "a.patch").write_text("x"); (d / "b.txt").write_text("y")
+    (d / "MANIFEST.md").write_text("m"); (d / "expected.json").write_text("{}")
+    assert sorted(runner.load_items(d)) == ["a.patch", "b.txt"]
+    assert sorted(runner.load_items(d, "*.patch")) == ["a.patch"]
